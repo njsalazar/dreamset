@@ -1,23 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getClient } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get("q")?.trim().toLowerCase() ?? "";
 
-  const db = getDb();
+  const client = getClient();
 
-  let songs: { title: string }[];
+  let result;
   if (q) {
-    songs = db
-      .prepare(
-        "SELECT title FROM songs WHERE LOWER(title) LIKE ? ORDER BY title LIMIT 50"
-      )
-      .all(`%${q}%`) as { title: string }[];
+    result = await client.execute({
+      sql: "SELECT title FROM songs WHERE LOWER(title) LIKE ? ORDER BY title LIMIT 50",
+      args: [`%${q}%`],
+    });
   } else {
-    songs = db
-      .prepare("SELECT title FROM songs ORDER BY title LIMIT 200")
-      .all() as { title: string }[];
+    result = await client.execute({
+      sql: "SELECT title FROM songs ORDER BY title LIMIT 200",
+      args: [],
+    });
   }
 
-  return NextResponse.json({ songs: songs.map((s) => s.title) });
+  const songs = (result.rows as unknown as { title: string }[]).map((s) => s.title);
+  return NextResponse.json({ songs });
 }

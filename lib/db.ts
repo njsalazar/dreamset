@@ -1,15 +1,23 @@
-import Database from "better-sqlite3";
-import path from "path";
+import { createClient } from "@libsql/client";
 
-const DB_PATH = path.resolve(process.cwd(), "data/gd.db");
+let _client: ReturnType<typeof createClient> | null = null;
 
-let _db: Database.Database | null = null;
+export function getClient() {
+  if (!_client) {
+    const url = process.env.TURSO_DATABASE_URL;
+    const authToken = process.env.TURSO_AUTH_TOKEN;
 
-export function getDb(): Database.Database {
-  if (!_db) {
-    _db = new Database(DB_PATH, { readonly: true });
+    if (url) {
+      // Production: Turso
+      _client = createClient({ url, authToken });
+    } else {
+      // Local dev: SQLite file via libsql
+      _client = createClient({
+        url: "file:data/gd.db",
+      });
+    }
   }
-  return _db;
+  return _client;
 }
 
 export function normalize(title: string): string {

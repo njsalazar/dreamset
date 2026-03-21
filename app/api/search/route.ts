@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, normalize } from "@/lib/db";
+import { getClient, normalize } from "@/lib/db";
 
 interface ShowResult {
   date: string;
@@ -19,16 +19,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ shows: [] });
   }
 
-  const db = getDb();
+  const client = getClient();
   const normalizedInput = songs.map(normalize);
 
-  // Find DB songs matching normalized input titles
   const placeholders = normalizedInput.map(() => "?").join(",");
-  const matchedSongs = db
-    .prepare(
-      `SELECT id, title, normalized_title FROM songs WHERE normalized_title IN (${placeholders})`
-    )
-    .all(...normalizedInput) as {
+  const matchedSongsResult = await client.execute({
+    sql: `SELECT id, title, normalized_title FROM songs WHERE normalized_title IN (${placeholders})`,
+    args: normalizedInput,
+  });
+
+  const matchedSongs = matchedSongsResult.rows as unknown as {
     id: number;
     title: string;
     normalized_title: string;
@@ -41,16 +41,16 @@ export async function POST(request: NextRequest) {
   const matchedSongIds = matchedSongs.map((s) => s.id);
   const idPlaceholders = matchedSongIds.map(() => "?").join(",");
 
-  // Get all show rows where any of those songs appear
-  const rows = db
-    .prepare(
-      `SELECT s.id, s.date, s.venue, s.city, s.state, s.archive_url,
-              ss.song_id
-       FROM shows s
-       JOIN show_songs ss ON s.id = ss.show_id
-       WHERE ss.song_id IN (${idPlaceholders})`
-    )
-    .all(...matchedSongIds) as {
+  const rowsResult = await client.execute({
+    sql: `SELECT s.id, s.date, s.venue, s.city, s.state, s.archive_url,
+                 ss.song_id
+          FROM shows s
+          JOIN show_songs ss ON s.id = ss.show_id
+          WHERE ss.song_id IN (${idPlaceholders})`,
+    args: matchedSongIds,
+  });
+
+  const rows = rowsResult.rows as unknown as {
     id: number;
     date: string;
     venue: string;
@@ -60,7 +60,6 @@ export async function POST(request: NextRequest) {
     song_id: number;
   }[];
 
-  // Group by show, collecting matched song IDs
   const showMap = new Map<
     number,
     {
@@ -87,7 +86,6 @@ export async function POST(request: NextRequest) {
     showMap.get(row.id)!.matchedSongIds.add(row.song_id);
   }
 
-  // Map normalized_title -> song ID for input lookup
   const normToSongId = new Map<string, number>();
   for (const s of matchedSongs) {
     normToSongId.set(s.normalized_title, s.id);
