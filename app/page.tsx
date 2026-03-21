@@ -17,7 +17,7 @@ function formatDate(dateStr: string): string {
   const [year, month, day] = dateStr.split("-").map(Number);
   return new Date(year, month - 1, day).toLocaleDateString("en-US", {
     year: "numeric",
-    month: "long",
+    month: "short",
     day: "numeric",
   });
 }
@@ -37,49 +37,36 @@ function MatchBadge({ pct }: { pct: number }) {
 function ShowRow({ show }: { show: ShowResult }) {
   const [tooltipVisible, setTooltipVisible] = useState(false);
 
-  const location = [
-    show.city && show.state ? `${show.city}, ${show.state}` : show.city || show.state,
-  ]
-    .filter(Boolean)
-    .join("");
+  const location =
+    show.city && show.state
+      ? `${show.city}, ${show.state}`
+      : show.city || show.state;
 
-  const venueDisplay = [show.venue, location].filter(Boolean).join(" \u2014 ");
+  const venueDisplay = [show.venue, location].filter(Boolean).join(" — ");
 
-  const rowContent = (
+  const inner = (
     <tr
-      className="border-b border-slate-800 hover:bg-slate-800/50 transition-colors"
+      className="border-b border-slate-800 hover:bg-slate-800/50 transition-colors cursor-pointer"
       onMouseEnter={() => setTooltipVisible(true)}
       onMouseLeave={() => setTooltipVisible(false)}
     >
-      <td className="py-2.5 pr-4 text-slate-300 whitespace-nowrap">
+      <td className="py-2.5 pr-3 text-slate-300 whitespace-nowrap text-xs sm:text-sm">
         {formatDate(show.date)}
       </td>
-      <td className="py-2.5 pr-4 text-slate-100 max-w-xs">
-        <span className="block truncate">{venueDisplay}</span>
+      <td className="py-2.5 pr-3 text-slate-100 text-xs sm:text-sm">
+        <span className="line-clamp-2 sm:line-clamp-1">{venueDisplay}</span>
       </td>
       <td className="py-2.5">
         <div className="relative inline-block">
           <MatchBadge pct={show.match_pct} />
           {tooltipVisible && (
-            <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 w-60 bg-slate-800 border border-slate-700 rounded-lg p-3 shadow-xl text-xs pointer-events-none">
-              {show.matched_songs.length > 0 && (
-                <div className="mb-1 space-y-0.5">
-                  {show.matched_songs.map((s) => (
-                    <div key={s} className="text-green-400">
-                      ✓ {s}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {show.missing_songs.length > 0 && (
-                <div className="space-y-0.5">
-                  {show.missing_songs.map((s) => (
-                    <div key={s} className="text-red-400">
-                      ✗ {s}
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="absolute right-0 sm:left-full sm:right-auto sm:ml-2 top-full sm:top-1/2 sm:-translate-y-1/2 mt-1 sm:mt-0 z-50 w-52 bg-slate-800 border border-slate-700 rounded-lg p-3 shadow-xl text-xs pointer-events-none">
+              {show.matched_songs.map((s) => (
+                <div key={s} className="text-green-400">✓ {s}</div>
+              ))}
+              {show.missing_songs.map((s) => (
+                <div key={s} className="text-red-400">✗ {s}</div>
+              ))}
             </div>
           )}
         </div>
@@ -90,12 +77,11 @@ function ShowRow({ show }: { show: ShowResult }) {
   if (show.archive_url) {
     return (
       <a href={show.archive_url} target="_blank" rel="noopener noreferrer" style={{ display: "contents" }}>
-        {rowContent}
+        {inner}
       </a>
     );
   }
-
-  return rowContent;
+  return inner;
 }
 
 export default function Home() {
@@ -106,29 +92,38 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Fetch suggestions when query changes
+  // Fetch suggestions
   useEffect(() => {
     if (!addingOpen) return;
     setSuggestionsLoading(true);
+    setSuggestionsError(false);
     const controller = new AbortController();
-    fetch(`/api/songs?q=${encodeURIComponent(query)}`, { signal: controller.signal })
-      .then((r) => r.json())
+    const url = `/api/songs?q=${encodeURIComponent(query)}`;
+    fetch(url, { signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data: { songs: string[] }) => {
         setSuggestions(data.songs.slice(0, 20));
         setSuggestionsLoading(false);
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (err.name !== "AbortError") {
+          setSuggestionsError(true);
+          setSuggestionsLoading(false);
+        }
+      });
     return () => controller.abort();
   }, [query, addingOpen]);
 
-  // Auto-focus when dropdown opens
+  // Auto-focus on open
   useEffect(() => {
-    if (addingOpen) {
-      setTimeout(() => inputRef.current?.focus(), 10);
-    }
+    if (addingOpen) setTimeout(() => inputRef.current?.focus(), 10);
   }, [addingOpen]);
 
   // Click-outside closes dropdown
@@ -145,10 +140,7 @@ export default function Home() {
 
   // Search when setlist changes
   useEffect(() => {
-    if (selectedSongs.length === 0) {
-      setShows([]);
-      return;
-    }
+    if (selectedSongs.length === 0) { setShows([]); return; }
     setLoading(true);
     fetch("/api/search", {
       method: "POST",
@@ -156,49 +148,44 @@ export default function Home() {
       body: JSON.stringify({ songs: selectedSongs }),
     })
       .then((r) => r.json())
-      .then((data: { shows: ShowResult[] }) => {
-        setShows(data.shows);
-        setLoading(false);
-      })
+      .then((data: { shows: ShowResult[] }) => { setShows(data.shows); setLoading(false); })
       .catch(() => setLoading(false));
   }, [selectedSongs]);
 
-  const addSong = useCallback(
-    (song: string) => {
-      if (!selectedSongs.includes(song)) {
-        setSelectedSongs((prev) => [...prev, song]);
-      }
-      setAddingOpen(false);
-      setQuery("");
-    },
-    [selectedSongs]
-  );
+  const addSong = useCallback((song: string) => {
+    if (!selectedSongs.includes(song)) setSelectedSongs((p) => [...p, song]);
+    setAddingOpen(false);
+    setQuery("");
+  }, [selectedSongs]);
 
   const removeSong = (song: string) =>
-    setSelectedSongs((prev) => prev.filter((s) => s !== song));
+    setSelectedSongs((p) => p.filter((s) => s !== song));
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold text-amber-400 tracking-tight">
-          Grateful Dead Setlist Finder
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      {/* Header */}
+      <header className="px-4 pt-6 pb-4 sm:px-8 sm:pt-8">
+        <h1 className="text-2xl sm:text-3xl font-bold text-amber-400 tracking-tight">
+          🎸 Grateful Dead Setlist Finder
         </h1>
         <p className="text-slate-400 mt-1 text-sm">
-          Build your dream setlist and find the shows that played it.
+          Build your dream setlist. Find the shows that played it.
         </p>
       </header>
 
-      <div className="flex gap-6 items-start">
+      {/* Main — stacked on mobile, side-by-side on sm+ */}
+      <main className="px-4 pb-8 sm:px-8 flex flex-col sm:flex-row gap-4 sm:gap-6 items-start">
+
         {/* Left panel — setlist builder */}
-        <div className="w-72 shrink-0 bg-slate-900 rounded-xl p-5">
-          <h2 className="text-lg font-semibold text-slate-100 mb-4">
-            Build Your Setlist
+        <div className="w-full sm:w-72 sm:shrink-0 bg-slate-900 rounded-xl p-4 sm:p-5">
+          <h2 className="text-base sm:text-lg font-semibold text-slate-100 mb-3">
+            Your Setlist
           </h2>
 
           {selectedSongs.length === 0 ? (
-            <p className="text-slate-500 text-sm mb-4">No songs added yet.</p>
+            <p className="text-slate-500 text-sm mb-3">No songs added yet.</p>
           ) : (
-            <ul className="space-y-1 mb-4">
+            <ul className="space-y-1 mb-3">
               {selectedSongs.map((song) => (
                 <li
                   key={song}
@@ -207,7 +194,7 @@ export default function Home() {
                   <span className="truncate">{song}</span>
                   <button
                     onClick={() => removeSong(song)}
-                    className="text-slate-500 hover:text-red-400 shrink-0 text-xs font-bold"
+                    className="text-slate-500 hover:text-red-400 shrink-0 font-bold"
                     aria-label={`Remove ${song}`}
                   >
                     ✕
@@ -217,7 +204,7 @@ export default function Home() {
             </ul>
           )}
 
-          {/* Add song / autocomplete */}
+          {/* Add song autocomplete */}
           <div className="relative" ref={dropdownRef}>
             {!addingOpen ? (
               <button
@@ -234,22 +221,22 @@ export default function Home() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      setAddingOpen(false);
-                      setQuery("");
-                    }
+                    if (e.key === "Escape") { setAddingOpen(false); setQuery(""); }
                   }}
                   placeholder="Search songs..."
-                  className="w-full bg-slate-800 text-slate-100 placeholder-slate-500 px-3 py-2 text-sm outline-none border-b border-slate-700"
+                  className="w-full bg-slate-800 text-slate-100 placeholder-slate-500 px-3 py-2.5 text-sm outline-none border-b border-slate-700"
                 />
                 <ul className="max-h-64 overflow-y-auto">
                   {suggestionsLoading && (
                     <li className="px-3 py-2 text-xs text-slate-500">Loading…</li>
                   )}
-                  {!suggestionsLoading && suggestions.length === 0 && (
+                  {suggestionsError && (
+                    <li className="px-3 py-2 text-xs text-red-400">Failed to load songs. Try again.</li>
+                  )}
+                  {!suggestionsLoading && !suggestionsError && suggestions.length === 0 && (
                     <li className="px-3 py-2 text-xs text-slate-500">No songs found.</li>
                   )}
-                  {!suggestionsLoading &&
+                  {!suggestionsLoading && !suggestionsError &&
                     suggestions.map((song) => {
                       const already = selectedSongs.includes(song);
                       return (
@@ -264,11 +251,7 @@ export default function Home() {
                             }`}
                           >
                             {song}
-                            {already && (
-                              <span className="ml-2 text-xs text-slate-600">
-                                added
-                              </span>
-                            )}
+                            {already && <span className="ml-2 text-xs text-slate-600">added</span>}
                           </button>
                         </li>
                       );
@@ -280,9 +263,11 @@ export default function Home() {
         </div>
 
         {/* Right panel — results */}
-        <div className="flex-1 min-w-0 bg-slate-900 rounded-xl p-5">
+        <div className="w-full flex-1 min-w-0 bg-slate-900 rounded-xl p-4 sm:p-5">
           <div className="flex items-center gap-3 mb-4">
-            <h2 className="text-lg font-semibold text-slate-100">Matching Shows</h2>
+            <h2 className="text-base sm:text-lg font-semibold text-slate-100">
+              Matching Shows
+            </h2>
             {shows.length > 0 && (
               <span className="bg-amber-600 text-amber-100 text-xs font-bold px-2 py-0.5 rounded-full">
                 {shows.length}
@@ -293,25 +278,17 @@ export default function Home() {
           {loading ? (
             <p className="text-slate-400 text-sm">Searching…</p>
           ) : selectedSongs.length === 0 ? (
-            <p className="text-slate-500 text-sm">
-              Add songs to your setlist to find matching shows.
-            </p>
+            <p className="text-slate-500 text-sm">Add songs to your setlist to find matching shows.</p>
           ) : shows.length === 0 ? (
             <p className="text-slate-500 text-sm">No matching shows found.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto -mx-1">
               <table className="w-full text-sm border-separate border-spacing-0">
                 <thead>
                   <tr className="text-slate-400 text-xs uppercase tracking-wider">
-                    <th className="text-left pb-2 pr-4 font-medium border-b border-slate-700">
-                      Date
-                    </th>
-                    <th className="text-left pb-2 pr-4 font-medium border-b border-slate-700">
-                      Show
-                    </th>
-                    <th className="text-left pb-2 font-medium border-b border-slate-700">
-                      Match %
-                    </th>
+                    <th className="text-left pb-2 pr-3 font-medium border-b border-slate-700 whitespace-nowrap">Date</th>
+                    <th className="text-left pb-2 pr-3 font-medium border-b border-slate-700">Show</th>
+                    <th className="text-left pb-2 font-medium border-b border-slate-700">Match</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -323,7 +300,7 @@ export default function Home() {
             </div>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }
