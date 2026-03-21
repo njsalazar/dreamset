@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["better-sqlite3"],
+  serverExternalPackages: ["@libsql/client"],
+  typescript: {
+    ignoreBuildErrors: false,
+  },
 };
 
 export default nextConfig;
