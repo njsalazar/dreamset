@@ -264,14 +264,28 @@ export default function Home() {
 
         {/* Right panel — results */}
         <div className="w-full flex-1 min-w-0 bg-slate-900 rounded-xl p-4 sm:p-5">
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
             <h2 className="text-base sm:text-lg font-semibold text-slate-100">
               Matching Shows
             </h2>
             {shows.length > 0 && (
-              <span className="bg-amber-600 text-amber-100 text-xs font-bold px-2 py-0.5 rounded-full">
-                {shows.length}
-              </span>
+              <>
+                <span className="bg-amber-700/60 text-amber-200 text-xs font-semibold px-2.5 py-0.5 rounded-full">
+                  {shows.length} total
+                </span>
+                {(() => {
+                  const perfect = shows.filter(s => s.match_pct === 100).length;
+                  return perfect > 0 ? (
+                    <span className="bg-green-700/60 text-green-200 text-xs font-semibold px-2.5 py-0.5 rounded-full">
+                      {perfect} perfect match{perfect !== 1 ? "es" : ""}
+                    </span>
+                  ) : (
+                    <span className="bg-slate-700 text-slate-400 text-xs font-semibold px-2.5 py-0.5 rounded-full">
+                      0 perfect matches
+                    </span>
+                  );
+                })()}
+              </>
             )}
           </div>
 
